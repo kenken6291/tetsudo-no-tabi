@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f7a4d">
+  <title>鉄道の旅 ― 日本列島レールゲーム</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚃</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Old+Mincho:wght@600;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" data-act="go-lobby" aria-label="ロビーへ戻る">鉄道の旅</button>
+    <div id="turnBadge" class="turn-badge" aria-live="polite" hidden></div>
+    <div class="topbar-tools">
+      <button id="soundBtn" class="icon-btn" data-act="toggle-sound" aria-pressed="true" aria-label="ナレーション音声">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path class="snd-on" d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/><path class="snd-off" d="M4 9v6h4l5 4V5L8 9H4zm12.6 3 2.7-2.7-1.4-1.4-2.7 2.7-2.7-2.7-1.4 1.4 2.7 2.7-2.7 2.7 1.4 1.4 2.7-2.7 2.7 2.7 1.4-1.4z"/></svg>
+      </button>
+      <button id="menuBtn" class="icon-btn" data-act="menu" aria-label="メニュー" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ログイン・登録 -->
+    <section id="view-auth" class="view narrow" hidden>
+      <div class="hero">
+        <p class="hero-kicker">日本列島レールゲーム</p>
+        <h1 class="hero-title">鉄道の旅</h1>
+        <p class="hero-lead">カードを集めて線路を敷き、札幌から鹿児島まで日本をつなぎましょう。開通するたびに、車窓の景色をナレーションでお届けします。</p>
+      </div>
+      <div class="tabs" role="tablist">
+        <button role="tab" class="tab is-on" data-act="tab" data-tab="login" aria-selected="true">ログイン</button>
+        <button role="tab" class="tab" data-act="tab" data-tab="register" aria-selected="false">新規登録</button>
+        <button role="tab" class="tab" data-act="tab" data-tab="reset" aria-selected="false">パスワード再発行</button>
+      </div>
+      <form id="loginForm" class="card form" data-tabpanel="login">
+        <label>メールアドレス<input name="email" type="email" autocomplete="email" required></label>
+        <label>パスワード
+          <span class="pw"><input name="password" type="password" autocomplete="current-password" required><button type="button" class="eye" data-act="toggle-eye" aria-label="パスワードを表示" aria-pressed="false"></button></span>
+        </label>
+        <button class="btn primary" type="submit">ログイン</button>
+      </form>
+      <form id="registerForm" class="card form" data-tabpanel="register" hidden>
+        <label>ニックネーム（20文字まで）<input name="nickname" maxlength="20" required></label>
+        <label>メールアドレス<input name="email" type="email" autocomplete="email" required></label>
+        <p class="note">登録すると、仮パスワードがメールで届きます。初回ログイン時に新しいパスワードを設定してください。</p>
+        <button class="btn primary" type="submit">仮パスワードを受け取る</button>
+      </form>
+      <form id="resetForm" class="card form" data-tabpanel="reset" hidden>
+        <label>登録したメールアドレス<input name="email" type="email" autocomplete="email" required></label>
+        <p class="note">新しい仮パスワードをメールでお送りします。</p>
+        <button class="btn primary" type="submit">仮パスワードを再発行</button>
+      </form>
+    </section>
+
+    <!-- パスワード変更 -->
+    <section id="view-change" class="view narrow" hidden>
+      <h2 class="view-title">パスワードの変更</h2>
+      <p id="changeNote" class="note"></p>
+      <form id="changeForm" class="card form">
+        <label>現在のパスワード（仮パスワード）
+          <span class="pw"><input name="currentPassword" type="password" autocomplete="current-password" required><button type="button" class="eye" data-act="toggle-eye" aria-label="パスワードを表示" aria-pressed="false"></button></span>
+        </label>
+        <label>新しいパスワード（英字と数字を含む8文字以上）
+          <span class="pw"><input name="newPassword" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="eye" data-act="toggle-eye" aria-label="パスワードを表示" aria-pressed="false"></button></span>
+        </label>
+        <label>新しいパスワード（確認）
+          <span class="pw"><input name="confirm" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="eye" data-act="toggle-eye" aria-label="パスワードを表示" aria-pressed="false"></button></span>
+        </label>
+        <button class="btn primary" type="submit">パスワードを変更</button>
+        <button class="btn ghost" type="button" data-act="cancel-change" id="cancelChange">やめる</button>
+      </form>
+    </section>
+
+    <!-- ロビー -->
+    <section id="view-lobby" class="view narrow" hidden>
+      <h2 class="view-title">ロビー</h2>
+      <form id="createForm" class="card form inline-form">
+        <label>新しい旅をつくる<input name="title" maxlength="30" placeholder="例：日曜の鉄道旅"></label>
+        <button class="btn primary" type="submit">旅をつくる</button>
+      </form>
+      <form id="joinForm" class="card form inline-form">
+        <label>招待されたゲームIDで参加<input name="gameId" placeholder="G から始まるID" autocapitalize="characters" required></label>
+        <button class="btn" type="submit">参加する</button>
+      </form>
+      <div id="lobbyLists" aria-live="polite"></div>
+    </section>
+
+    <!-- 待合室 -->
+    <section id="view-room" class="view narrow" hidden></section>
+
+    <!-- ゲーム -->
+    <section id="view-game" class="view game" hidden>
+      <div class="board-wrap">
+        <svg id="board" role="img" aria-label="日本の路線図" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="zoom">
+          <button class="icon-btn" data-act="zoom-in" aria-label="拡大">＋</button>
+          <button class="icon-btn" data-act="zoom-out" aria-label="縮小">－</button>
+          <button class="icon-btn" data-act="zoom-fit" aria-label="全体を表示">全</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div id="players" class="players"></div>
+        <div id="awayBanner" class="away-banner" hidden>
+          <p>操作がない状態が続いたため、CPUがあなたの代わりに進めています。</p>
+          <button class="btn primary" data-act="resume">自分で操作に戻る</button>
+        </div>
+        <p id="hint" class="hint" aria-live="polite"></p>
+        <div class="block">
+          <h3 class="block-title">駅のカード置き場</h3>
+          <div id="market" class="market"></div>
+        </div>
+        <div class="block">
+          <h3 class="block-title">あなたの手札</h3>
+          <div id="hand" class="hand"></div>
+        </div>
+        <div id="actions" class="actions"></div>
+        <div class="block">
+          <h3 class="block-title">あなたの目的地</h3>
+          <div id="dests" class="tickets"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer"><span id="ver"></span></footer>
+
+  <!-- 路線シート -->
+  <div id="routeSheet" class="sheet" hidden role="dialog" aria-modal="false" aria-labelledby="routeSheetTitle">
+    <div id="routeSheetBody"></div>
+  </div>
+
+  <!-- 目的地選択 -->
+  <div id="destModal" class="modal" hidden role="dialog" aria-modal="true">
+    <div class="modal-box" id="destModalBody"></div>
+  </div>
+
+  <!-- 結果 -->
+  <div id="resultModal" class="modal" hidden role="dialog" aria-modal="true">
+    <div class="modal-box" id="resultBody"></div>
+  </div>
+
+  <!-- メニュー -->
+  <div id="menu" class="drawer" hidden>
+    <div class="drawer-box">
+      <p class="drawer-user" id="menuUser"></p>
+      <form id="nickForm" class="form">
+        <label>ニックネーム<input name="nickname" maxlength="20" required></label>
+        <button class="btn" type="submit">ニックネームを保存</button>
+      </form>
+      <button class="btn" data-act="change-pw-open">パスワードを変更</button>
+      <button class="btn" data-act="go-lobby">ロビーへ戻る</button>
+      <button class="btn ghost" data-act="logout">ログアウト</button>
+      <button class="btn ghost" data-act="close-menu">閉じる</button>
+      <p class="drawer-ver" id="menuVer"></p>
+    </div>
+  </div>
+
+  <!-- 開通演出 -->
+  <div id="fx" class="fx" hidden aria-live="polite">
+    <div class="fx-title" id="fxTitle"></div>
+    <div class="fx-video" id="fxVideo" hidden></div>
+    <div class="fx-caption">
+      <p id="fxCaption"></p>
+      <button class="btn small" data-act="fx-close">閉じる</button>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
