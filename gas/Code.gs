@@ -4,7 +4,7 @@
  * ・デプロイ：ウェブアプリ（実行ユーザー：自分 / アクセス：全員）
  *   ※コード変更後は「デプロイを管理」→ 新しいバージョンで再デプロイ
  ******************************************************/
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 
 const SHEETS = {
   Users: ['userId', 'email', 'nickname', 'salt', 'hash', 'mustChange', 'failCount', 'lockedUntil', 'createdAt', 'updatedAt'],
@@ -37,7 +37,8 @@ const NARRATION_SYSTEM = [
   '- 年号・統計・実在人物など、検証できない具体的事実は書かない',
   '- 出力はJSONのみ：{"narration":"...","mood":"calm|bright|nostalgic"}'
 ].join('\n');
-const TTS_STYLE = '穏やかな旅番組のナレーターとして、ややゆっくり落ち着いた声で読み上げてください：';
+// 音声キャッシュの版。読み上げ方法を変えたら上げると、古い音声を使わず作り直す
+const NARRATION_CACHE_VER = 'v2';
 
 /* =========================================================
  * エントリーポイント
@@ -1138,7 +1139,7 @@ function apiNarrate_(req) {
   const ctx = m[2] === 'open' ? routeContext_(m[1]) : destContext_(m[1]);
   if (!ctx) fail_('BAD_KEY', '対象が見つかりません');
   const season = season_();
-  const cacheKey = key + ':' + season;
+  const cacheKey = key + ':' + season + ':' + NARRATION_CACHE_VER;
 
   const cached = findNarration_(cacheKey);
   if (cached) {
@@ -1246,7 +1247,8 @@ function synthesizeSpeech_(text) {
   const voice = prop_('GEMINI_TTS_VOICE', 'Charon');
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent';
   const body = {
-    contents: [{ parts: [{ text: TTS_STYLE + text }] }],
+    // 指示文を混ぜると冒頭で読み上げられてしまうため、ナレーション本文だけを渡す
+    contents: [{ parts: [{ text: text }] }],
     generationConfig: {
       responseModalities: ['AUDIO'],
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } }

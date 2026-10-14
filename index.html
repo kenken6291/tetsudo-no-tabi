@@ -19,6 +19,7 @@
       <button id="soundBtn" class="icon-btn" data-act="toggle-sound" aria-pressed="true" aria-label="ナレーション音声">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path class="snd-on" d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/><path class="snd-off" d="M4 9v6h4l5 4V5L8 9H4zm12.6 3 2.7-2.7-1.4-1.4-2.7 2.7-2.7-2.7-1.4 1.4 2.7 2.7-2.7 2.7 1.4 1.4 2.7-2.7 2.7 2.7 1.4-1.4z"/></svg>
       </button>
+      <button id="helpBtn" class="icon-btn" data-act="open-help" aria-label="遊び方">？</button>
       <button id="menuBtn" class="icon-btn" data-act="menu" aria-label="メニュー" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
       </button>
@@ -32,6 +33,7 @@
         <p class="hero-kicker">日本列島レールゲーム</p>
         <h1 class="hero-title">鉄道の旅</h1>
         <p class="hero-lead">カードを集めて線路を敷き、札幌から鹿児島まで日本をつなぎましょう。開通するたびに、車窓の景色をナレーションでお届けします。</p>
+        <button class="btn small help-link" data-act="open-help">遊び方を見る</button>
       </div>
       <div class="tabs" role="tablist">
         <button role="tab" class="tab is-on" data-act="tab" data-tab="login" aria-selected="true">ログイン</button>
@@ -153,6 +155,7 @@
         <label>ニックネーム<input name="nickname" maxlength="20" required></label>
         <button class="btn" type="submit">ニックネームを保存</button>
       </form>
+      <button class="btn" data-act="open-help">遊び方</button>
       <button class="btn" data-act="change-pw-open">パスワードを変更</button>
       <button class="btn" data-act="go-lobby">ロビーへ戻る</button>
       <button class="btn ghost" data-act="logout">ログアウト</button>
@@ -168,6 +171,101 @@
     <div class="fx-caption">
       <p id="fxCaption"></p>
       <button class="btn small" data-act="fx-close">閉じる</button>
+    </div>
+  </div>
+
+  <!-- 遊び方 -->
+  <div id="helpModal" class="modal help" hidden role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="modal-box help-box">
+      <div class="help-head">
+        <h2 id="helpTitle">遊び方</h2>
+        <button class="btn small ghost" data-act="close-help" id="helpClose">閉じる</button>
+      </div>
+      <nav class="help-nav" aria-label="遊び方の目次">
+        <button data-act="help-jump" data-to="h-goal">目的</button>
+        <button data-act="help-jump" data-to="h-setup">準備</button>
+        <button data-act="help-jump" data-to="h-turn">手番</button>
+        <button data-act="help-jump" data-to="h-score">得点</button>
+        <button data-act="help-jump" data-to="h-end">終わり方</button>
+        <button data-act="help-jump" data-to="h-time">制限時間</button>
+        <button data-act="help-jump" data-to="h-ops">画面の操作</button>
+      </nav>
+      <div class="help-body" id="helpBody">
+        <section id="h-goal">
+          <h3>ゲームの目的</h3>
+          <p>列車カードを集めて都市と都市のあいだに線路を敷き、得点を競います。手元の<b>目的地カード</b>に書かれた2つの都市を、自分の線路だけでつなぐと大きなボーナスです。最後に一番得点の高い人が優勝です。</p>
+          <div class="help-sample">
+            <span class="ticket sample"><span class="t-route"><span>東京</span><span class="t-arrow">→</span><span>大阪</span></span><span class="t-pts">8<small>点</small></span><span class="t-meta">鉄道の旅　普通乗車券</span></span>
+            <p class="note">東京から大阪まで自分の線路がつながれば＋8点。つながらないまま終わると−8点です。</p>
+          </div>
+        </section>
+
+        <section id="h-setup">
+          <h3>はじめの準備</h3>
+          <p>出発すると、全員に列車カードが4枚配られます。続いて目的地カードが3枚配られるので、<b>2枚以上</b>を選んで持っていきます。遠い目的地ほど点数が高く、そのぶん難しくなります。</p>
+          <p>持っている列車コマの数は人数で変わります。</p>
+          <table class="help-table">
+            <tr><th>人数</th><td>2人</td><td>3人</td><td>4人</td><td>5人</td></tr>
+            <tr><th>列車コマ</th><td>35両</td><td>30両</td><td>25両</td><td>22両</td></tr>
+          </table>
+        </section>
+
+        <section id="h-turn">
+          <h3>自分の番でできること（どれか1つ）</h3>
+          <div class="help-action">
+            <h4>カードを2枚引く</h4>
+            <p>「駅のカード置き場」の山札か、表向きの5枚から引きます。表向きの<b>機関車</b>を取ったときは、その1枚で番が終わります。2枚目に表向きの機関車は取れません。</p>
+            <div class="help-cards" aria-hidden="true">
+              <span class="tcard deck"><span>山札</span></span>
+              <span class="tcard" style="--c:#d23c3c"><span>赤</span></span>
+              <span class="tcard" style="--c:#2f6fd0"><span>青</span></span>
+              <span class="tcard loco"><span>機関車</span></span>
+            </div>
+          </div>
+          <div class="help-action">
+            <h4>路線を敷く</h4>
+            <p>地図の路線をタップすると、支払い方法が出ます。路線と<b>同じ色のカードを両数ぶん</b>出すと開通し、その区間に自分の色の列車が並びます。灰色の路線は、好きな1色でそろえれば敷けます。機関車カードは<b>どの色の代わりにも</b>なります。</p>
+            <p class="note">例：赤の3両の路線 → 赤3枚、または赤2枚＋機関車1枚。</p>
+          </div>
+          <div class="help-action">
+            <h4>目的地カードを引く</h4>
+            <p>目的地カードを3枚引き、<b>1枚以上</b>を手元に残します。残さなかったカードは山の一番下に戻ります。</p>
+          </div>
+          <h4>複線（2本並んだ路線）</h4>
+          <p>同じ人が両方を取ることはできません。2〜3人で遊ぶときは、片方が取られるともう片方は使えなくなります。</p>
+        </section>
+
+        <section id="h-score">
+          <h3>得点</h3>
+          <p>路線を開通すると、長さに応じてすぐに得点が入ります。長い路線ほどお得です。</p>
+          <table class="help-table">
+            <tr><th>長さ</th><td>1両</td><td>2両</td><td>3両</td><td>4両</td><td>5両</td><td>6両</td></tr>
+            <tr><th>得点</th><td>1</td><td>2</td><td>4</td><td>7</td><td>10</td><td>15</td></tr>
+          </table>
+          <p>目的地の2都市が自分の線路でつながった時点で、その目的地の点数が加わります。ゲーム終了時につながっていない目的地は、その点数が<b>差し引かれます</b>。</p>
+        </section>
+
+        <section id="h-end">
+          <h3>ゲームの終わり方</h3>
+          <p>だれかの列車コマが<b>2両以下</b>になると「最終ラウンド」です。その人も含めて全員があと1回ずつ番を行い、ゲーム終了となります。敷ける路線がなくなったときも終了です。</p>
+          <p>終了後、目的地の減点を反映した最終得点で順位が決まります。</p>
+        </section>
+
+        <section id="h-time">
+          <h3>制限時間</h3>
+          <p>1回の番には制限時間があり、上の表示に残り時間が出ます（ホストが待合室で変更できます）。時間を過ぎると、CPUが代わりに1手進めます。2回続くと、戻るまでCPUが代わりに遊ぶ「代行」になります。「自分で操作に戻る」を押せば、いつでも戻れます。</p>
+        </section>
+
+        <section id="h-ops">
+          <h3>画面の操作</h3>
+          <ul class="help-list">
+            <li>地図は指でなぞると動き、2本の指で広げると拡大します。パソコンではマウスのホイールで拡大できます。右上の「全」で全体表示に戻ります。</li>
+            <li>点線の輪がついた駅は、あなたの目的地です。下の切符をタップすると、その区間を地図で表示します。</li>
+            <li>路線を開通すると、列車が走る演出と車窓のナレーションが流れます。音を消したいときは上のスピーカーボタンを押してください。</li>
+            <li>CPUを加えると、1人でも遊べます。友だちとは、待合室の「招待リンクを送る」で一緒に遊べます。</li>
+          </ul>
+        </section>
+      </div>
     </div>
   </div>
 

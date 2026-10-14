@@ -8,7 +8,7 @@
   const CFG = window.APP_CONFIG || {};
   const APP_VERSION = CFG.APP_VERSION || '0.1.0';
   const POLL_MS = CFG.POLL_MS || 3000;
-  const LS = { session: 'tnt_session', sound: 'tnt_sound' };
+  const LS = { session: 'tnt_session', sound: 'tnt_sound', helpSeen: 'tnt_help_seen' };
   const NS = 'http://www.w3.org/2000/svg';
   const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -430,6 +430,10 @@
         showView('game');
         buildBoard();
         fitBoard(false);
+        if (!localStorage.getItem(LS.helpSeen)) {
+          openHelp();
+          toast('遊び方は、いつでも上の「？」から見られます');
+        }
       }
       renderGame();
     }
@@ -1381,6 +1385,21 @@
   }
 
   /* =========================================================
+   * 遊び方
+   * ========================================================= */
+  function openHelp() {
+    S.helpReturn = document.activeElement;
+    $('#helpModal').hidden = false;
+    $('#helpBody').scrollTop = 0;
+    $('#helpClose').focus();
+    localStorage.setItem(LS.helpSeen, '1');
+  }
+  function closeHelp() {
+    $('#helpModal').hidden = true;
+    if (S.helpReturn && S.helpReturn.focus) S.helpReturn.focus();
+  }
+
+  /* =========================================================
    * メニュー
    * ========================================================= */
   function openMenu() { $('#menu').hidden = false; }
@@ -1456,6 +1475,12 @@
     'fx-close': function () { stopFx(); fitBoard(true); },
     'show-result': showResult,
     'close-result': function () { $('#resultModal').hidden = true; },
+    'open-help': function () { closeMenu(); openHelp(); },
+    'close-help': closeHelp,
+    'help-jump': function (el) {
+      const t = document.getElementById(el.dataset.to);
+      if (t) t.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'start' });
+    },
     'resume': function () {
       return withBusy(async function () {
         const r = await api('resume', { gameId: S.gameId });
@@ -1518,11 +1543,13 @@
     });
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
-      if (!$('#menu').hidden) closeMenu();
+      if (!$('#helpModal').hidden) closeHelp();
+      else if (!$('#menu').hidden) closeMenu();
       else if (!$('#routeSheet').hidden) closeSheet();
       else if (S.fx.running) stopFx();
     });
     $('#menu').addEventListener('click', function (e) { if (e.target.id === 'menu') closeMenu(); });
+    $('#helpModal').addEventListener('click', function (e) { if (e.target.id === 'helpModal') closeHelp(); });
     document.addEventListener('pointerdown', unlockAudio, { passive: true, once: true });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
   }
