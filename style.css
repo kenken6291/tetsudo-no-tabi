@@ -694,3 +694,30 @@ body.fx-on .toasts { bottom: calc(190px + var(--safe-b)); }
   .help-table { font-size: 14px; }
   .help-table th, .help-table td { padding: 5px 6px; }
 }
+
+/* ---------- バージョン情報 ---------- */
+.ver-btn {
+  background: none;
+  border: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 6px 10px;
+  min-height: 32px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ver-btn.warn { color: var(--danger); font-weight: 700; }
+.panel-ver { display: block; margin: 24px auto 0; }
+.modal#versionModal { z-index: 66; }
+.version-box { max-width: 560px; padding: 0; display: flex; flex-direction: column; max-height: calc(100vh - 32px); overflow: hidden; }
+.version-body { overflow-y: auto; padding: 12px 20px 22px; }
+.ver-table th { text-align: left; }
+.ver-table td { text-align: left; font-weight: 700; }
+.ver-warn { background: #fdecea; border-left: 4px solid var(--danger); padding: 8px 12px; color: var(--danger); font-weight: 700; margin: 10px 0; }
+.ver-h { font-family: var(--serif); font-weight: 900; font-size: 19px; margin: 18px 0 6px; padding-left: 10px; border-left: 6px solid var(--green); }
+.changelog { list-style: none; padding: 0; margin: 0 0 16px; }
+.changelog > li { padding: 10px 0; border-bottom: 1px dashed var(--line); }
+.cl-head { display: flex; gap: 12px; align-items: baseline; }
+.cl-head span { color: var(--ink-soft); font-size: 14px; }
+.changelog ul { margin: 4px 0 0; padding-left: 1.2em; font-size: 15px; }

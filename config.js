@@ -2,6 +2,6 @@
  * GAS をデプロイしたら、ウェブアプリの URL（/exec で終わるもの）を GAS_URL に貼り付けてください。 */
 window.APP_CONFIG = {
   GAS_URL: 'https://script.google.com/macros/s/AKfycbxB2s5ApH74AAhCNDOh4fxVSwlJQX4nxc1hp1En4blXMTHlBvzIUnhC4ZPokXg7Icsx1w/exec',
-  APP_VERSION: '0.2.2',
+  APP_VERSION: '0.2.3',
   POLL_MS: 3000
 };

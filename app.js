@@ -10,6 +10,16 @@
   const POLL_MS = CFG.POLL_MS || 3000;
   const LS = { session: 'tnt_session', sound: 'tnt_sound', helpSeen: 'tnt_help_seen' };
   const NS = 'http://www.w3.org/2000/svg';
+  // この画面が前提とするサーバー（GAS）の最低バージョン
+  const MIN_SERVER_VERSION = '0.2.1';
+  // 更新履歴（新しい順）。server はその版で必要になったサーバーのバージョン
+  const CHANGELOG = [
+    { ver: '0.2.3', date: '2026-10-15', server: '0.2.1', items: ['バージョン情報と更新履歴を見られるようにしました'] },
+    { ver: '0.2.2', date: '2026-10-15', server: '0.2.1', items: ['遊び方の解説を追加しました（上部の「？」から開けます）'] },
+    { ver: '0.2.1', date: '2026-10-15', server: '0.2.1', items: ['ナレーション音声の冒頭で、読み上げの指示文まで読まれてしまう不具合を直しました'] },
+    { ver: '0.2.0', date: '2026-10-14', server: '0.2.0', items: ['1手の制限時間を追加しました（時間切れでCPUが代行）', '操作のない状態が続くとCPUが代わりに遊ぶ「代行」を追加しました'] },
+    { ver: '0.1.0', date: '2026-10-14', server: '0.1.0', items: ['最初の公開版（オンライン対戦・CPU・会員登録・開通ナレーション）'] }
+  ];
   const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const CARD = {
@@ -170,10 +180,66 @@
     window.scrollTo(0, 0);
   }
 
+  function cmpVer(a, b) {
+    const pa = String(a).split('.').map(Number);
+    const pb = String(b).split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d < 0 ? -1 : 1;
+    }
+    return 0;
+  }
+
+  function serverOutdated() {
+    return !!S.serverVersion && cmpVer(S.serverVersion, MIN_SERVER_VERSION) < 0;
+  }
+
   function renderVersion() {
-    const t = '画面 v' + APP_VERSION + (S.serverVersion ? '／サーバー v' + S.serverVersion : '');
-    $('#ver').textContent = t;
+    const t = '画面 v' + APP_VERSION + '／サーバー ' + (S.serverVersion ? 'v' + S.serverVersion : '確認中');
+    const warn = serverOutdated();
+    ['#ver', '#panelVer'].forEach(function (sel) {
+      const el = $(sel);
+      if (!el) return;
+      el.textContent = t + (warn ? '　⚠ サーバーが古い版です' : '');
+      el.classList.toggle('warn', warn);
+    });
     $('#menuVer').textContent = t;
+    if (!$('#versionModal').hidden) renderVersionModal();
+  }
+
+  function renderVersionModal() {
+    const warn = serverOutdated();
+    const latest = CHANGELOG[0];
+    $('#versionBody').innerHTML =
+      '<table class="help-table ver-table">' +
+      '<tr><th>画面（GitHub Pages）</th><td>v' + esc(APP_VERSION) + '</td></tr>' +
+      '<tr><th>サーバー（GAS）</th><td>' + (S.serverVersion ? 'v' + esc(S.serverVersion) : '確認できませんでした') + '</td></tr>' +
+      '<tr><th>最終更新日</th><td>' + esc(latest.date) + '</td></tr>' +
+      '</table>' +
+      (warn
+        ? '<p class="ver-warn">サーバーが v' + esc(S.serverVersion) + ' のままです。この画面には v' + MIN_SERVER_VERSION + ' 以上が必要です。GASを「新しいバージョン」で再デプロイしてください。</p>'
+        : (S.serverVersion ? '<p class="note">画面とサーバーの組み合わせは正常です。</p>' : '')) +
+      '<h3 class="ver-h">更新履歴</h3>' +
+      '<ol class="changelog" reversed>' + CHANGELOG.map(function (c) {
+        return '<li><div class="cl-head"><b>v' + esc(c.ver) + '</b><span>' + esc(c.date) + '</span></div>' +
+          '<ul>' + c.items.map(function (it) { return '<li>' + esc(it) + '</li>'; }).join('') + '</ul></li>';
+      }).join('') + '</ol>' +
+      '<div class="btn-row"><button class="btn small" data-act="reload-app">最新の状態に読み込み直す</button></div>';
+  }
+
+  async function openVersion() {
+    closeMenu();
+    S.versionReturn = document.activeElement;
+    renderVersionModal();
+    $('#versionModal').hidden = false;
+    $('#versionClose').focus();
+    try { await api('ping'); } catch (e) { /* 表示はそのまま */ }
+    renderVersionModal();
+  }
+
+  function closeVersion() {
+    $('#versionModal').hidden = true;
+    if (S.versionReturn && S.versionReturn.focus) S.versionReturn.focus();
   }
 
   function renderSound() {
@@ -202,6 +268,7 @@
     renderSound();
     bindEvents();
     S.pendingGame = new URLSearchParams(location.search).get('game');
+    api('ping').catch(function () { renderVersion(); });
     if (!S.session) { showView('auth'); return; }
     try {
       const r = await api('me');
@@ -1476,6 +1543,9 @@
     'show-result': showResult,
     'close-result': function () { $('#resultModal').hidden = true; },
     'open-help': function () { closeMenu(); openHelp(); },
+    'open-version': openVersion,
+    'close-version': closeVersion,
+    'reload-app': function () { location.reload(); },
     'close-help': closeHelp,
     'help-jump': function (el) {
       const t = document.getElementById(el.dataset.to);
@@ -1543,13 +1613,15 @@
     });
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
-      if (!$('#helpModal').hidden) closeHelp();
+      if (!$('#versionModal').hidden) closeVersion();
+      else if (!$('#helpModal').hidden) closeHelp();
       else if (!$('#menu').hidden) closeMenu();
       else if (!$('#routeSheet').hidden) closeSheet();
       else if (S.fx.running) stopFx();
     });
     $('#menu').addEventListener('click', function (e) { if (e.target.id === 'menu') closeMenu(); });
     $('#helpModal').addEventListener('click', function (e) { if (e.target.id === 'helpModal') closeHelp(); });
+    $('#versionModal').addEventListener('click', function (e) { if (e.target.id === 'versionModal') closeVersion(); });
     document.addEventListener('pointerdown', unlockAudio, { passive: true, once: true });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
   }

@@ -126,11 +126,12 @@
           <h3 class="block-title">あなたの目的地</h3>
           <div id="dests" class="tickets"></div>
         </div>
+        <button class="ver-btn panel-ver" id="panelVer" data-act="open-version" aria-label="バージョン情報"></button>
       </div>
     </section>
   </main>
 
-  <footer class="footer"><span id="ver"></span></footer>
+  <footer class="footer"><button class="ver-btn" id="ver" data-act="open-version" aria-label="バージョン情報"></button></footer>
 
   <!-- 路線シート -->
   <div id="routeSheet" class="sheet" hidden role="dialog" aria-modal="false" aria-labelledby="routeSheetTitle">
@@ -160,6 +161,7 @@
       <button class="btn" data-act="go-lobby">ロビーへ戻る</button>
       <button class="btn ghost" data-act="logout">ログアウト</button>
       <button class="btn ghost" data-act="close-menu">閉じる</button>
+      <button class="btn ghost" data-act="open-version">バージョン情報</button>
       <p class="drawer-ver" id="menuVer"></p>
     </div>
   </div>
@@ -266,6 +268,17 @@
           </ul>
         </section>
       </div>
+    </div>
+  </div>
+
+  <!-- バージョン情報 -->
+  <div id="versionModal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="versionTitle">
+    <div class="modal-box version-box">
+      <div class="help-head">
+        <h2 id="versionTitle">バージョン情報</h2>
+        <button class="btn small ghost" data-act="close-version" id="versionClose">閉じる</button>
+      </div>
+      <div class="version-body" id="versionBody"></div>
     </div>
   </div>
 
