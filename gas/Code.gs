@@ -3,8 +3,11 @@
  * ・オンライン対戦＋CPU混在 / 会員認証 / Gemini ナレーション＋TTS
  * ・デプロイ：ウェブアプリ（実行ユーザー：自分 / アクセス：全員）
  *   ※コード変更後は「デプロイを管理」→ 新しいバージョンで再デプロイ
+ * ・RETRO ARCADE HUB でログイン済みの会員は、ハブが発行した入場チケット
+ *   （HMAC署名）で自動ログインできる。スクリプトプロパティ HUB_SSO_SECRET に
+ *   ハブ側と同じ値を設定すること。
  ******************************************************/
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.3.0';
 
 const SHEETS = {
   Users: ['userId', 'email', 'nickname', 'salt', 'hash', 'mustChange', 'failCount', 'lockedUntil', 'createdAt', 'updatedAt'],
@@ -29,6 +32,14 @@ const RULES = {
   awayAfter: 2                            // 連続この回数の時間切れで「代行モード」へ
 };
 const SESSION_PREFIX = 'sess_';
+// RETRO ARCADE HUB 連携（シングルサインオン）
+const HUB_SSO = {
+  aud: 'tetsudo-no-tabi',   // ハブ側 SSO_GAMES の値と一致させる
+  noncePrefix: 'hubnonce_', // 使い捨てチェック用（CacheService）
+  nonceSec: 600,
+  userIdPrefix: 'H',        // ハブ会員用のユーザーID（例：HM0001）
+  maxClockSkewMs: 300000    // 発行時刻が未来すぎるチケットは拒否
+};
 const NARRATION_SYSTEM = [
   'あなたは日本の鉄道旅番組のナレーターです。落ち着いた語り口で、旅情を誘う車窓の情景を描写してください。',
   '制約：',
@@ -74,6 +85,7 @@ function dispatch_(req) {
     case 'register': return withLock_(function () { return apiRegister_(req); });
     case 'login': return withLock_(function () { return apiLogin_(req); });
     case 'resetPassword': return withLock_(function () { return apiResetPassword_(req); });
+    case 'hubLogin': return withLock_(function () { return apiHubLogin_(req); });
   }
 
   const user = authenticate_(req.sessionToken);
@@ -83,7 +95,8 @@ function dispatch_(req) {
   }
   if (action === 'me') return { data: publicUser_(user) };
   if (action === 'changePassword') return withLock_(function () { return apiChangePassword_(user, req); });
-  if (user.mustChange === true || user.mustChange === 'TRUE') {
+  // ハブ経由のログインは、ハブ側で本人確認済みのためパスワード変更を求めない
+  if (!user._viaHub && (user.mustChange === true || user.mustChange === 'TRUE')) {
     fail_('MUST_CHANGE_PASSWORD', '初回ログインのため、パスワードを変更してください');
   }
 
@@ -136,6 +149,7 @@ function apiLogin_(req) {
   const pw = String(req.password || '');
   const u = findUser_('email', email);
   if (!u) fail_('LOGIN_FAILED', 'メールアドレスまたはパスワードが違います');
+  if (!u.hash) fail_('HUB_ONLY', 'この会員はRETRO ARCADE HUB経由でご利用ください（パスワード未設定）。パスワードでログインしたい場合は「パスワード再発行」から設定できます');
 
   const now = Date.now();
   const lockedUntil = Number(u.lockedUntil || 0);
@@ -159,14 +173,13 @@ function apiLogin_(req) {
   u.updatedAt = nowIso_();
   saveUser_(u);
 
-  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
-  CacheService.getScriptCache().put(SESSION_PREFIX + token, u.userId, RULES.sessionSec);
-  return { data: { sessionToken: token, user: publicUser_(u) } };
+  return { data: { sessionToken: createSession_(u.userId, false), user: publicUser_(u) } };
 }
 
 function apiChangePassword_(user, req) {
   const cur = String(req.currentPassword || '');
   const next = String(req.newPassword || '');
+  if (!user.hash) fail_('NO_PASSWORD', 'ハブ経由の会員はパスワードを使いません');
   if (hashPw_(cur, user.salt) !== user.hash) fail_('WRONG_PASSWORD', '現在のパスワードが違います');
   if (next.length < 8 || next.length > 64 || !/[A-Za-z]/.test(next) || !/\d/.test(next)) {
     fail_('WEAK_PASSWORD', 'パスワードは英字と数字を含む8〜64文字にしてください');
@@ -210,17 +223,94 @@ function apiUpdateNickname_(user, req) {
 function authenticate_(token) {
   if (!token) fail_('NO_SESSION', 'ログインしてください');
   const cache = CacheService.getScriptCache();
-  const uid = cache.get(SESSION_PREFIX + token);
-  if (!uid) fail_('SESSION_EXPIRED', 'セッションの有効期限が切れました。再ログインしてください');
-  cache.put(SESSION_PREFIX + token, uid, RULES.sessionSec);
-  const u = findUser_('userId', uid);
+  const val = cache.get(SESSION_PREFIX + token);
+  if (!val) fail_('SESSION_EXPIRED', 'セッションの有効期限が切れました。再ログインしてください');
+  cache.put(SESSION_PREFIX + token, val, RULES.sessionSec);
+  // 値は「ユーザーID」または「ユーザーID|hub」（ハブ経由ログイン）
+  const parts = String(val).split('|');
+  const u = findUser_('userId', parts[0]);
   if (!u) fail_('NO_USER', 'ユーザーが見つかりません');
+  u._viaHub = parts[1] === 'hub';
   return u;
 }
 
-function publicUser_(u) {
-  return { userId: u.userId, email: u.email, nickname: unsafeCell_(u.nickname), mustChange: u.mustChange === true || u.mustChange === 'TRUE' };
+function createSession_(userId, viaHub) {
+  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put(SESSION_PREFIX + token, userId + (viaHub ? '|hub' : ''), RULES.sessionSec);
+  return token;
 }
+
+function publicUser_(u) {
+  const mustChange = u.mustChange === true || u.mustChange === 'TRUE';
+  return {
+    userId: u.userId, email: u.email, nickname: unsafeCell_(u.nickname),
+    mustChange: u._viaHub ? false : mustChange,
+    viaHub: !!u._viaHub,
+    hasPassword: !!u.hash
+  };
+}
+
+/* =========================================================
+ * RETRO ARCADE HUB 連携（入場チケットによる自動ログイン）
+ * チケット形式：base64url(JSON本文) + '.' + base64url(HMAC-SHA256(本文, HUB_SSO_SECRET))
+ * ========================================================= */
+function apiHubLogin_(req) {
+  const secret = prop_('HUB_SSO_SECRET', '');
+  if (!secret) fail_('SSO_DISABLED', 'アーケードハブ連携の設定（HUB_SSO_SECRET）が未設定です');
+
+  const parts = String(req.ticket || '').split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) fail_('BAD_TICKET', '入場チケットが正しくありません。アーケードハブからもう一度開いてください');
+  const expected = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(parts[0], secret));
+  if (!safeEqual_(expected, parts[1])) fail_('BAD_TICKET', '入場チケットが正しくありません。アーケードハブからもう一度開いてください');
+
+  let p;
+  try {
+    p = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString('UTF-8'));
+  } catch (err) {
+    fail_('BAD_TICKET', '入場チケットを読み取れませんでした');
+  }
+  const now = Date.now();
+  if (p.aud !== HUB_SSO.aud) fail_('BAD_TICKET', 'このゲーム用の入場チケットではありません');
+  if (!(Number(p.exp) > now)) fail_('TICKET_EXPIRED', '入場チケットの有効期限が切れました。アーケードハブからもう一度開いてください');
+  if (Number(p.iat) > now + HUB_SSO.maxClockSkewMs) fail_('BAD_TICKET', '入場チケットの時刻が正しくありません');
+  const mid = String(p.mid || '').replace(/[^A-Za-z0-9]/g, '');
+  if (!mid || !p.nonce) fail_('BAD_TICKET', '入場チケットが正しくありません');
+
+  // 使い捨て：同じチケットの再利用を防ぐ
+  const cache = CacheService.getScriptCache();
+  const nonceKey = HUB_SSO.noncePrefix + String(p.nonce).slice(0, 64);
+  if (cache.get(nonceKey)) fail_('TICKET_USED', 'この入場チケットは使用済みです。アーケードハブからもう一度開いてください');
+  cache.put(nonceKey, '1', HUB_SSO.nonceSec);
+
+  const userId = HUB_SSO.userIdPrefix + mid;
+  const email = normEmail_(p.email);
+  let nickname = String(p.nick || '').trim().slice(0, 20) || ('ハブ会員' + mid);
+
+  // ①ハブ会員用IDで検索 → ②同じメールの既存会員がいれば同一人物として引き継ぐ → ③新規作成
+  let u = findUser_('userId', userId);
+  if (!u && email) u = findUser_('email', email);
+  if (!u) {
+    const ts = nowIso_();
+    u = {
+      userId: userId, email: email, nickname: safeCell_(nickname), salt: '', hash: '',
+      mustChange: false, failCount: 0, lockedUntil: '', createdAt: ts, updatedAt: ts
+    };
+    sheet_('Users').appendRow(SHEETS.Users.map(function (k) { return u[k]; }));
+  }
+  u._viaHub = true;
+  log_('', u.userId, 'hubLogin', { mid: p.mid, type: p.type });
+
+  return { data: { sessionToken: createSession_(u.userId, true), user: publicUser_(u) } };
+}
+
+function safeEqual_(a, b) {
+  a = String(a); b = String(b);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 
 function hashPw_(pw, salt) {
   const pepper = prop_('PEPPER', '');
@@ -257,6 +347,7 @@ function sendTempPasswordMail_(email, nickname, temp, isReset) {
 }
 
 function findUser_(field, value) {
+  if (value === '' || value === null || value === undefined) return null; // 空メールのハブ会員同士の誤一致を防ぐ
   const vals = sheet_('Users').getDataRange().getValues();
   const head = vals[0];
   const idx = head.indexOf(field);

@@ -11,9 +11,10 @@
   const LS = { session: 'tnt_session', sound: 'tnt_sound', helpSeen: 'tnt_help_seen' };
   const NS = 'http://www.w3.org/2000/svg';
   // この画面が前提とするサーバー（GAS）の最低バージョン
-  const MIN_SERVER_VERSION = '0.2.1';
+  const MIN_SERVER_VERSION = '0.3.0';
   // 更新履歴（新しい順）。server はその版で必要になったサーバーのバージョン
   const CHANGELOG = [
+    { ver: '0.3.0', date: '2026-10-20', server: '0.3.0', items: ['RETRO ARCADE HUBでログイン済みなら、ログインなしでそのまま遊べるようにしました'] },
     { ver: '0.2.3', date: '2026-10-15', server: '0.2.1', items: ['バージョン情報と更新履歴を見られるようにしました'] },
     { ver: '0.2.2', date: '2026-10-15', server: '0.2.1', items: ['遊び方の解説を追加しました（上部の「？」から開けます）'] },
     { ver: '0.2.1', date: '2026-10-15', server: '0.2.1', items: ['ナレーション音声の冒頭で、読み上げの指示文まで読まれてしまう不具合を直しました'] },
@@ -268,7 +269,17 @@
     renderSound();
     bindEvents();
     S.pendingGame = new URLSearchParams(location.search).get('game');
+    const hubTicket = takeHubTicket();
     api('ping').catch(function () { renderVersion(); });
+    if (hubTicket) {
+      try {
+        await onHubLogin(hubTicket);
+        return;
+      } catch (e) {
+        toast(e.message || 'アーケードハブからの自動ログインに失敗しました', 'error');
+        // 失敗時は通常の流れ（保存済みセッション or ログイン画面）へ
+      }
+    }
     if (!S.session) { showView('auth'); return; }
     try {
       const r = await api('me');
@@ -281,8 +292,29 @@
     }
   }
 
+  /* URLの #hub=... からアーケードハブの入場チケットを取り出し、URLからは消す */
+  function takeHubTicket() {
+    const m = /(?:^#|&)hub=([^&]+)/.exec(location.hash || '');
+    if (!m) return '';
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; }
+    try { return decodeURIComponent(m[1]); } catch (e) { return ''; }
+  }
+
+  async function onHubLogin(ticket) {
+    clearSession();
+    const r = await api('hubLogin', { ticket: ticket });
+    S.session = r.data.sessionToken;
+    localStorage.setItem(LS.session, S.session);
+    S.user = r.data.user;
+    toast(S.user.nickname + 'さん、ようこそ（アーケードハブから自動ログイン）');
+    await afterLogin();
+  }
+
   async function afterLogin() {
-    $('#menuUser').textContent = S.user.nickname + ' さん（' + S.user.email + '）';
+    $('#menuUser').textContent = S.user.nickname + ' さん（' +
+      (S.user.viaHub ? 'RETRO ARCADE HUB会員' + (S.user.email ? '・' + S.user.email : '') : S.user.email) + '）';
+    const pwBtn = document.querySelector('[data-act="change-pw-open"]');
+    if (pwBtn) pwBtn.hidden = !!S.user.viaHub && !S.user.hasPassword;
     $('#nickForm').nickname.value = S.user.nickname;
     await ensureMap();
     if (S.pendingGame) {
