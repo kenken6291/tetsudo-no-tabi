@@ -65,6 +65,7 @@
       <h2 class="view-title">パスワードの変更</h2>
       <p id="changeNote" class="note"></p>
       <form id="changeForm" class="card form">
+        <input name="username" type="text" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
         <label>現在のパスワード（仮パスワード）
           <span class="pw"><input name="currentPassword" type="password" autocomplete="current-password" required><button type="button" class="eye" data-act="toggle-eye" aria-label="パスワードを表示" aria-pressed="false"></button></span>
         </label>
@@ -284,7 +285,7 @@
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <script src="config.js?v=0.3.0"></script>
-  <script src="app.js?v=0.3.0"></script>
+  <script src="config.js?v=0.3.1"></script>
+  <script src="app.js?v=0.3.1"></script>
 </body>
 </html>

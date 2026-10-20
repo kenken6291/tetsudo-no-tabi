@@ -14,6 +14,7 @@
   const MIN_SERVER_VERSION = '0.3.0';
   // 更新履歴（新しい順）。server はその版で必要になったサーバーのバージョン
   const CHANGELOG = [
+    { ver: '0.3.1', date: '2026-10-20', server: '0.3.0', items: ['通信が一瞬途切れたとき（サーバー応答の404）に自動で再送・再同期するようにしました'] },
     { ver: '0.3.0', date: '2026-10-20', server: '0.3.0', items: ['RETRO ARCADE HUBでログイン済みなら、ログインなしでそのまま遊べるようにしました'] },
     { ver: '0.2.3', date: '2026-10-15', server: '0.2.1', items: ['バージョン情報と更新履歴を見られるようにしました'] },
     { ver: '0.2.2', date: '2026-10-15', server: '0.2.1', items: ['遊び方の解説を追加しました（上部の「？」から開けます）'] },
@@ -113,23 +114,38 @@
   /* =========================================================
    * 通信
    * ========================================================= */
+  // 何度送っても結果が変わらない（読み取りだけの）操作。応答が取れなければ自動で再送する
+  const RETRY_SAFE = { ping: 1, getMap: 1, me: 1, listGames: 1, getState: 1, checkDestinations: 1, narrate: 1 };
+
   async function api(action, payload) {
     if (!CFG.GAS_URL || /XXXX/.test(CFG.GAS_URL)) throw new ApiError('NO_CONFIG', 'config.js の GAS_URL を設定してください');
     const body = Object.assign({ action: action }, payload || {});
     if (S.session) body.sessionToken = S.session;
-    let res;
-    try {
-      res = await fetch(CFG.GAS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(body)
-      });
-    } catch (e) {
-      throw new ApiError('NETWORK', '通信できませんでした。電波の良い場所でもう一度お試しください');
-    }
+    const tries = RETRY_SAFE[action] ? 2 : 1;
     let json = null;
-    try { json = await res.json(); } catch (e) { json = null; }
-    if (!json) throw new ApiError('BAD_RESPONSE', 'サーバーの応答を読み取れませんでした');
+    for (let i = 0; i < tries && !json; i++) {
+      if (i > 0) await new Promise(function (ok) { setTimeout(ok, 700); });
+      let res;
+      try {
+        res = await fetch(CFG.GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(body)
+        });
+      } catch (e) {
+        if (i + 1 < tries) continue;
+        throw new ApiError('NETWORK', '通信できませんでした。電波の良い場所でもう一度お試しください');
+      }
+      // GAS は応答を script.googleusercontent.com へ転送して返す。混雑時などに
+      // その転送先が 404 になることがある（コンソールの 404 はこれ）。
+      if (!res.ok) continue;
+      try { json = await res.json(); } catch (e) { json = null; }
+    }
+    if (!json) {
+      throw new ApiError('BAD_RESPONSE', RETRY_SAFE[action]
+        ? 'サーバーの応答を読み取れませんでした'
+        : '通信が一瞬不安定でした。盤面を最新の状態に更新します（操作が反映されていない場合はもう一度どうぞ）');
+    }
     if (json.appVersion && json.appVersion !== S.serverVersion) { S.serverVersion = json.appVersion; renderVersion(); }
     if (!json.ok) {
       const err = json.error || {};
@@ -152,8 +168,10 @@
     try {
       await fn();
     } catch (e) {
-      if (e && e.message) toast(e.message, 'error');
+      if (e && e.message) toast(e.message, e.code === 'BAD_RESPONSE' ? 'warn' : 'error');
       if (e && !(e instanceof ApiError)) console.error(e);
+      // 応答だけ失われ、操作自体はサーバーで反映済みのことがあるため、すぐ同期し直す
+      if (e && e.code === 'BAD_RESPONSE' && S.gameId) setTimeout(poll, 300);
     } finally {
       S.busy = false;
       document.body.classList.remove('busy');
@@ -346,6 +364,7 @@
       : '新しいパスワードを設定します。';
     $('#cancelChange').hidden = !!forced;
     $('#changeForm').reset();
+    $('#changeForm').username.value = (S.user && S.user.email) || '';
     $('#changeForm').dataset.forced = forced ? '1' : '';
   }
 
