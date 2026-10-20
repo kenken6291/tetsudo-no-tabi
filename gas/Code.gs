@@ -7,7 +7,7 @@
  *   （HMAC署名）で自動ログインできる。スクリプトプロパティ HUB_SSO_SECRET に
  *   ハブ側と同じ値を設定すること。
  ******************************************************/
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.4.0';
 
 const SHEETS = {
   Users: ['userId', 'email', 'nickname', 'salt', 'hash', 'mustChange', 'failCount', 'lockedUntil', 'createdAt', 'updatedAt'],
@@ -32,6 +32,9 @@ const RULES = {
   awayAfter: 2                            // 連続この回数の時間切れで「代行モード」へ
 };
 const SESSION_PREFIX = 'sess_';
+const USER_CACHE_PREFIX = 'usr_';   // 会員情報のキャッシュ（毎回シート全体を読まないため）
+const USER_CACHE_SEC = 600;
+const NO_LOG_ACTIONS = { drawCard: true }; // 頻繁で軽い操作はログ書き込みを省いて応答を速くする
 // RETRO ARCADE HUB 連携（シングルサインオン）
 const HUB_SSO = {
   aud: 'tetsudo-no-tabi',   // ハブ側 SSO_GAMES の値と一致させる
@@ -228,9 +231,22 @@ function authenticate_(token) {
   cache.put(SESSION_PREFIX + token, val, RULES.sessionSec);
   // 値は「ユーザーID」または「ユーザーID|hub」（ハブ経由ログイン）
   const parts = String(val).split('|');
-  const u = findUser_('userId', parts[0]);
+  const u = getUserCached_(parts[0]);
   if (!u) fail_('NO_USER', 'ユーザーが見つかりません');
   u._viaHub = parts[1] === 'hub';
+  return u;
+}
+
+function getUserCached_(userId) {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(USER_CACHE_PREFIX + userId);
+  if (hit) {
+    try { return JSON.parse(hit); } catch (err) { /* 壊れていたら読み直す */ }
+  }
+  const u = findUser_('userId', userId);
+  if (u) {
+    try { cache.put(USER_CACHE_PREFIX + userId, JSON.stringify(u), USER_CACHE_SEC); } catch (err) { /* 失敗しても動作に影響なし */ }
+  }
   return u;
 }
 
@@ -364,6 +380,7 @@ function findUser_(field, value) {
 function saveUser_(u) {
   const head = SHEETS.Users;
   sheet_('Users').getRange(u._row, 1, 1, head.length).setValues([head.map(function (k) { return u[k]; })]);
+  CacheService.getScriptCache().remove(USER_CACHE_PREFIX + u.userId);
 }
 
 /* =========================================================
@@ -605,11 +622,14 @@ function gameAction_(user, req, fn, needTurn) {
       p.away = false;
       p.timeouts = 0;
     }
-    runCpuTurns_(g);
+    // CPU の手番はここでは進めず、直後の getState（ポーリング）で進める。
+    // 人間の操作への応答を CPU の思考時間ぶん待たせないため。
     saveGame_(g);
-    const logReq = Object.assign({}, req);
-    delete logReq.sessionToken;
-    log_(g.gameId, p.playerId, req.action, { req: logReq });
+    if (!NO_LOG_ACTIONS[req.action]) {
+      const logReq = Object.assign({}, req);
+      delete logReq.sessionToken;
+      log_(g.gameId, p.playerId, req.action, { req: logReq });
+    }
     return { stateVersion: g.version, data: data, state: view_(g, p.playerId) };
   });
 }

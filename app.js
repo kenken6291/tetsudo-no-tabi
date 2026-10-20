@@ -11,9 +11,10 @@
   const LS = { session: 'tnt_session', sound: 'tnt_sound', helpSeen: 'tnt_help_seen' };
   const NS = 'http://www.w3.org/2000/svg';
   // この画面が前提とするサーバー（GAS）の最低バージョン
-  const MIN_SERVER_VERSION = '0.3.0';
+  const MIN_SERVER_VERSION = '0.4.0';
   // 更新履歴（新しい順）。server はその版で必要になったサーバーのバージョン
   const CHANGELOG = [
+    { ver: '0.4.0', date: '2026-10-20', server: '0.4.0', items: ['カードを押した瞬間に手札へ反映し、2枚目もすぐ選べるようにしました', 'サーバー処理を軽くして応答を速くしました（CPUの手番は直後の同期で進みます）'] },
     { ver: '0.3.1', date: '2026-10-20', server: '0.3.0', items: ['通信が一瞬途切れたとき（サーバー応答の404）に自動で再送・再同期するようにしました'] },
     { ver: '0.3.0', date: '2026-10-20', server: '0.3.0', items: ['RETRO ARCADE HUBでログイン済みなら、ログインなしでそのまま遊べるようにしました'] },
     { ver: '0.2.3', date: '2026-10-15', server: '0.2.1', items: ['バージョン情報と更新履歴を見られるようにしました'] },
@@ -48,6 +49,9 @@
 
   const S = {
     session: localStorage.getItem(LS.session) || '',
+    drawQueue: [],      // 送信待ちのカード引き
+    drawing: false,     // カード引きを送信中
+    deckPending: 0,     // 山札から引いて結果待ちの枚数
     user: null,
     map: null,
     cityIdx: {},
@@ -162,7 +166,7 @@
   }
 
   async function withBusy(fn) {
-    if (S.busy) return;
+    if (S.busy || S.drawing) return;
     S.busy = true;
     document.body.classList.add('busy');
     try {
@@ -515,13 +519,15 @@
   }
 
   async function poll() {
-    if (!S.gameId || S.busy || S.polling || document.hidden) return;
+    if (!S.gameId || S.busy || S.drawing || S.polling || document.hidden) return;
     if (S.game && S.game.status === 'ended') return;
     S.polling = true;
     const gid = S.gameId;
     try {
       const r = await api('getState', { gameId: gid, clientVersion: S.version });
       if (gid !== S.gameId) return;
+      // 応答待ちの間にカードを引き始めていたら、古い盤面で上書きしない
+      if (S.drawing || S.drawQueue.length) return;
       if (r.state) applyState(r.state);
     } catch (e) {
       if (e.code === 'GAME_CLOSED' || e.code === 'NOT_IN_GAME') {
@@ -985,7 +991,8 @@
       const prefix = g.status === 'finalRound' ? '最終・' : '';
       if (isMyTurn()) {
         mine = true;
-        if (g.phase === 'drawSecond') { text = prefix + 'あと1枚引けます'; hint = 'もう1枚カードを引いてください（表の機関車は取れません）。'; }
+        if (g.phase === 'pendingEnd') { text = prefix + 'カードを受け取り中…'; hint = ''; }
+        else if (g.phase === 'drawSecond') { text = prefix + 'あと1枚引けます'; hint = 'もう1枚カードを引いてください（表の機関車は取れません）。'; }
         else if (g.phase === 'chooseDest') { text = prefix + '目的地を選んでください'; }
         else { text = prefix + 'あなたの番'; hint = 'カードを2枚引く・路線をタップして敷く・目的地カードを引く、のどれか1つを選びます。'; }
       } else {
@@ -1016,15 +1023,16 @@
   }
 
   function canDraw() {
-    return isMyTurn() && (S.game.phase === 'start' || S.game.phase === 'drawSecond') && !S.busy;
+    return isMyTurn() && (S.game.phase === 'start' || S.game.phase === 'drawSecond') && !S.busy && !S.game._drawPending2;
   }
 
   function renderMarket() {
     const g = S.game;
     const can = canDraw();
     const deckLeft = g.deckCount + g.discardCount;
-    let html = '<button class="tcard deck" data-act="draw-deck"' + (can && deckLeft ? '' : ' disabled') + ' aria-label="山札から引く（残り' + deckLeft + '枚）"><span>山札 ' + deckLeft + '</span></button>';
+    let html = '<button class="tcard deck' + (S.drawing ? ' pending' : '') + '" data-act="draw-deck"' + (can && deckLeft ? '' : ' disabled') + ' aria-label="山札から引く（残り' + deckLeft + '枚）"><span>山札 ' + deckLeft + '</span></button>';
     g.faceUp.forEach(function (c, i) {
+      if (c === '_pending') { html += '<button class="tcard empty pending" disabled aria-label="補充中"></button>'; return; }
       if (!c) { html += '<button class="tcard empty" disabled aria-label="空き"></button>'; return; }
       const dis = !can || (c === 'loco' && g.phase === 'drawSecond');
       html += '<button class="tcard ' + c + '" style="--c:' + CARD[c].hex + '" data-act="draw-face" data-i="' + i + '"' + (dis ? ' disabled' : '') + ' aria-label="表の' + CARD[c].name + 'を取る"><span>' + CARD[c].name + '</span></button>';
@@ -1038,7 +1046,7 @@
     $('#hand').innerHTML = HAND_ORDER.map(function (c) {
       return '<div class="hcard ' + c + (h[c] ? '' : ' zero') + '" style="--c:' + CARD[c].hex + '" aria-label="' + CARD[c].name + ' ' + h[c] + '枚">' +
         '<b>' + h[c] + '</b><small>' + CARD[c].name + '</small></div>';
-    }).join('');
+    }).join('') + (S.deckPending ? '<div class="hcard incoming" aria-label="山札から受け取り中"><b>?</b><small>受取中</small></div>' : '');
   }
 
   function renderActions() {
@@ -1225,13 +1233,89 @@
   /* =========================================================
    * ゲーム操作
    * ========================================================= */
+  /*
+   * カードを引く（先行表示＋送信キュー）
+   * サーバーの応答（1〜3秒）を待たずに、押した瞬間に手札・表のカード・手番表示を更新し、
+   * 2枚目もすぐ選べるようにする。送信は順番に行い、最後に届いたサーバーの状態で確定する。
+   */
   function drawCard(source, index) {
-    return withBusy(async function () {
-      const r = await api('drawCard', { gameId: S.gameId, source: source, index: index });
-      applyState(r.state);
-      const c = r.data.drawn;
-      toast((source === 'deck' ? '山札から' : '') + CARD[c].name + 'のカードを引きました' + (r.data.turnEnded ? '' : '。もう1枚引けます'));
-    });
+    const g = S.game;
+    if (!g || !canDraw()) return;
+    const card = source === 'faceUp' ? g.faceUp[index] : null;
+    if (source === 'faceUp' && (!card || card === '_pending')) return;
+    const second = g.phase === 'drawSecond';
+    const endsTurn = second || card === 'loco';
+
+    // ---- 先行表示 ----
+    if (source === 'faceUp') {
+      g.faceUp[index] = '_pending';
+      const h = handOf();
+      if (h) h[card] = (h[card] || 0) + 1;
+      toast(CARD[card].name + 'のカードを取りました' + (endsTurn ? '' : '。もう1枚引けます'));
+    } else {
+      if (g.deckCount > 0) g.deckCount--; else if (g.discardCount > 0) g.discardCount--;
+      S.deckPending = (S.deckPending || 0) + 1;
+    }
+    g.phase = endsTurn ? 'pendingEnd' : 'drawSecond';
+    if (second) g._drawPending2 = true;
+    S.drawQueue.push({ source: source, index: index, card: card, gameId: S.gameId });
+    renderGame();
+    flushDraws();
+  }
+
+  async function flushDraws() {
+    if (S.drawing) return;
+    S.drawing = true;
+    let lastState = null;
+    const deckDrawn = [];
+    try {
+      while (S.drawQueue.length) {
+        const op = S.drawQueue.shift();
+        if (op.gameId !== S.gameId) continue;
+        // 1枚目の応答で表のカードが入れ替わっていたら（機関車3枚リセット等）、2枚目は選び直してもらう
+        if (lastState && lastState.phase !== 'drawSecond') {
+          // 1枚目で手番が終わっていた（引けるカードがない等）
+          S.drawQueue.length = 0;
+          break;
+        }
+        if (lastState && op.source === 'faceUp' && lastState.faceUp[op.index] !== op.card) {
+          S.drawQueue.length = 0;
+          toast('表のカードが入れ替わったので、もう一度選んでください', 'warn');
+          break;
+        }
+        let r;
+        try {
+          r = await api('drawCard', { gameId: op.gameId, source: op.source, index: op.index });
+        } catch (e) {
+          S.drawQueue.length = 0;
+          if (e && e.message) toast(e.message, e.code === 'BAD_RESPONSE' ? 'warn' : 'error');
+          lastState = null;
+          await resyncState();
+          return;
+        }
+        lastState = r.state;
+        if (op.source === 'deck' && r.data && r.data.drawn) deckDrawn.push(r.data.drawn);
+      }
+      if (lastState) applyState(lastState);
+      if (deckDrawn.length) {
+        toast('山札から' + deckDrawn.map(function (c) { return CARD[c].name; }).join('・') + 'を引きました');
+      }
+      // 手番が移ったら、CPUの手番をすぐ進めてもらうため早めに同期する
+      if (lastState && lastState.currentPlayerId !== me()) setTimeout(poll, 400);
+    } finally {
+      S.drawing = false;
+      S.deckPending = 0;
+      if (S.game) delete S.game._drawPending2;
+      if (S.view === 'game') renderGame();
+    }
+  }
+
+  async function resyncState() {
+    if (!S.gameId) return;
+    try {
+      const r = await api('getState', { gameId: S.gameId });
+      if (r.state) { S.game = null; applyState(r.state); }
+    } catch (e) { /* 次のポーリングで回復 */ }
   }
 
   function claim(i) {
@@ -1244,6 +1328,7 @@
       closeSheet();
       applyState(r.state);
       playFx(r.data);
+      if (r.state && r.state.currentPlayerId !== me()) setTimeout(poll, 400);
     });
   }
 
