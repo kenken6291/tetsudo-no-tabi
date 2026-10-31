@@ -475,7 +475,10 @@
       '<div class="game-row-title"><span class="status-chip ' + esc(g.status) + '">' + esc(STATUS_LABEL[g.status] || g.status) + '</span>' + esc(g.title) + '</div>' +
       '<div class="game-row-sub">' + names + '（' + g.players.length + '人）</div>' +
       '</div>' +
+      '<div class="game-row-btns">' +
       '<button class="btn small' + (mine ? '' : ' primary') + '" data-act="open-game" data-id="' + esc(g.gameId) + '">' + (mine ? '開く' : '参加する') + '</button>' +
+      (mine ? '<button class="btn small danger" data-act="delete-game" data-id="' + esc(g.gameId) + '" data-title="' + esc(g.title) + '" data-status="' + esc(g.status) + '" data-host="' + (g.hostId === me() ? '1' : '') + '">削除</button>' : '') +
+      '</div>' +
       '</div>';
   }
 
@@ -483,7 +486,9 @@
     const mine = data.myGames || [];
     const open = data.openGames || [];
     $('#lobbyLists').innerHTML =
-      '<h3 class="list-title">参加中の旅</h3>' +
+      '<div class="list-head"><h3 class="list-title">参加中の旅</h3>' +
+      (mine.length ? '<button class="btn small danger" data-act="delete-all-games">一括削除</button>' : '') +
+      '</div>' +
       (mine.length ? mine.map(function (g) { return gameRow(g, true); }).join('') : '<p class="empty">まだありません。上の「旅をつくる」から始めましょう。</p>') +
       '<h3 class="list-title">参加者を募集中の旅</h3>' +
       (open.length ? open.map(function (g) { return gameRow(g, false); }).join('') : '<p class="empty">募集中の旅はありません。</p>') +
@@ -1635,6 +1640,26 @@
     'change-pw-open': function () { closeMenu(); showChange(false); },
     'cancel-change': backFromChange,
     'refresh-lobby': showLobby,
+    'delete-game': function (el) {
+      const st = el.dataset.status;
+      let msg = '「' + el.dataset.title + '」を削除しますか？';
+      if (st === 'waiting') msg += el.dataset.host ? '\n（ホストなので旅は解散になります）' : '\n（この旅から抜けます）';
+      else if (st !== 'ended') msg += '\n（一覧から消え、以後はCPUがあなたの代わりに打ちます）';
+      if (!window.confirm(msg)) return;
+      return withBusy(async function () {
+        await api('deleteGames', { gameIds: [el.dataset.id] });
+        toast('削除しました');
+        await showLobby();
+      });
+    },
+    'delete-all-games': function () {
+      if (!window.confirm('参加中の旅をすべて削除しますか？\n・募集中でホストの旅は解散\n・進行中の旅は以後CPUが代わりに打ちます\nこの操作は元に戻せません。')) return;
+      return withBusy(async function () {
+        const r = await api('deleteGames', { all: true });
+        toast((r.data && r.data.deleted || 0) + '件の旅を削除しました');
+        await showLobby();
+      });
+    },
     'open-game': function (el) { return withBusy(function () { return openGame(el.dataset.id); }); },
     'add-cpu': function () {
       return withBusy(async function () { const r = await api('addCpu', { gameId: S.gameId }); applyState(r.state); });

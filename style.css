@@ -217,6 +217,12 @@ main { flex: 1; display: flex; flex-direction: column; }
 .game-row-main { flex: 1; min-width: 0; }
 .game-row-title { font-weight: 700; overflow-wrap: anywhere; }
 .game-row-sub { font-size: 14px; color: var(--ink-soft); }
+.game-row-btns { display: flex; gap: 8px; flex-shrink: 0; }
+.list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 10px; }
+.list-head .list-title { margin: 0; }
+@media (max-width: 480px) {
+  .game-row-btns { flex-direction: column; }
+}
 .status-chip {
   display: inline-block;
   font-size: 13px;

@@ -7,7 +7,7 @@
  *   （HMAC署名）で自動ログインできる。スクリプトプロパティ HUB_SSO_SECRET に
  *   ハブ側と同じ値を設定すること。
  ******************************************************/
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.5.0';
 
 const SHEETS = {
   Users: ['userId', 'email', 'nickname', 'salt', 'hash', 'mustChange', 'failCount', 'lockedUntil', 'createdAt', 'updatedAt'],
@@ -110,6 +110,7 @@ function dispatch_(req) {
     case 'joinGame': return withLock_(function () { return apiJoinGame_(user, req); });
     case 'addCpu': return withLock_(function () { return apiAddCpu_(user, req); });
     case 'leaveGame': return withLock_(function () { return apiLeaveGame_(user, req); });
+    case 'deleteGames': return withLock_(function () { return apiDeleteGames_(user, req); });
     case 'startGame': return withLock_(function () { return apiStartGame_(user, req); });
     case 'setOptions': return withLock_(function () { return apiSetOptions_(user, req); });
     case 'resume': return withLock_(function () { return apiResume_(user, req); });
@@ -400,6 +401,7 @@ function apiListGames_(user) {
     let g;
     try { g = JSON.parse(vals[i][4]); } catch (err) { continue; }
     const isMine = g.players.some(function (p) { return p.playerId === user.userId; });
+    if (isMine && (g.hiddenBy || []).indexOf(user.userId) >= 0) continue; // 一覧から削除済み
     const summary = {
       gameId: g.gameId, title: g.title, status: g.status, hostId: g.hostId,
       players: g.players.map(function (p) { return { name: p.name, isCpu: p.isCpu, color: p.color }; }),
@@ -422,6 +424,11 @@ function apiInitGame_(user, req) {
 function apiJoinGame_(user, req) {
   const g = loadGame_(req.gameId);
   const already = findPlayer_(g, user.userId);
+  if (already && (g.hiddenBy || []).indexOf(user.userId) >= 0) {
+    // 削除した旅を招待リンクなどから開き直した場合は、一覧に戻す
+    g.hiddenBy = g.hiddenBy.filter(function (id) { return id !== user.userId; });
+    saveGame_(g);
+  }
   if (!already) {
     if (g.status !== 'waiting') fail_('ALREADY_STARTED', 'このゲームはすでに開始しています');
     if (g.players.length >= RULES.maxPlayers) fail_('GAME_FULL', '定員（' + RULES.maxPlayers + '人）に達しています');
@@ -463,6 +470,57 @@ function apiLeaveGame_(user, req) {
   saveGame_(g);
   log_(g.gameId, user.userId, 'leaveGame', { target: target });
   return { stateVersion: g.version, data: { closed: g.status === 'closed' }, state: view_(g, user.userId) };
+}
+
+/**
+ * 参加中の旅を一覧から削除する（1件・複数・すべて）
+ *  req.gameIds: 削除する gameId の配列 / req.all: true なら参加中の旅すべて
+ *  - 募集中（waiting）：ホストなら解散、参加者なら退出
+ *  - 進行中・終了：自分の一覧から外す。進行中なら以後はCPUが代わりに打つ
+ *  - 人間の参加者が全員削除したら、旅そのものを閉じる（closed）
+ */
+function apiDeleteGames_(user, req) {
+  const sh = sheet_('Games');
+  const last = sh.getLastRow();
+  if (last < 2) return { data: { deleted: 0 } };
+  const ids = req.all ? null : (Array.isArray(req.gameIds) ? req.gameIds.map(String) : []);
+  if (ids && !ids.length) fail_('BAD_REQUEST', '削除する旅を指定してください');
+  const vals = sh.getRange(2, 1, last - 1, SHEETS.Games.length).getValues();
+  let deleted = 0;
+  for (let i = 0; i < vals.length; i++) {
+    if (vals[i][1] === 'closed') continue;
+    if (ids && ids.indexOf(String(vals[i][0])) < 0) continue;
+    let g;
+    try { g = JSON.parse(vals[i][4]); } catch (err) { continue; }
+    if (!g || g.status === 'closed' || !findPlayer_(g, user.userId)) continue;
+    if ((g.hiddenBy || []).indexOf(user.userId) >= 0) continue;
+    Object.defineProperty(g, '_row', { value: i + 2, enumerable: false, writable: true });
+    hideGameForUser_(g, user.userId);
+    saveGame_(g);
+    deleted++;
+  }
+  log_('', user.userId, 'deleteGames', { all: !!req.all, ids: ids || [], deleted: deleted });
+  return { data: { deleted: deleted } };
+}
+
+function hideGameForUser_(g, uid) {
+  if (g.status === 'waiting') {
+    if (uid === g.hostId) {
+      g.status = 'closed';
+    } else {
+      g.players = g.players.filter(function (p) { return p.playerId !== uid; });
+      addEvent_(g, { type: 'leave', playerId: uid });
+    }
+    return;
+  }
+  g.hiddenBy = (g.hiddenBy || []).concat([uid]);
+  if (g.status !== 'ended') {
+    const p = findPlayer_(g, uid);
+    if (p) p.away = true; // 以後はCPU代行
+    addEvent_(g, { type: 'leave', playerId: uid });
+  }
+  const humanLeft = g.players.some(function (q) { return !q.isCpu && g.hiddenBy.indexOf(q.playerId) < 0; });
+  if (!humanLeft) g.status = 'closed';
 }
 
 function apiStartGame_(user, req) {
